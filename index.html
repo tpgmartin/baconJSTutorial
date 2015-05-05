@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>FRP InfiniteScroll</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bacon.js/0.7.53/Bacon.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/3.7.0/lodash.min.js"></script>
+  <style>
+    body  {
+      margin: 0;
+      padding: 0;
+      font-family: Helvetica, arial, freesans, clean, sans-serif;
+    }
+    .phonebook {
+      position: relative;
+      /* Fake row background colours with css */
+      background-image: linear-gradient(#f3f3f3 50%, transparent 50%, transparent);
+      background-size: 60px 60px; /* twice the height or a row, since the patterns spans two rows  */ 
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .phonebook li {
+      position: absolute;
+      height: 30px;
+      line-height: 30px;
+      padding: 0 10px;
+      color: #999;
+      font-size: 12px; 
+    }
+  </style>
+</head>
+<body>
+  <ul id="Phonebook" class="phonebook">
+    <script>
+    (function () {
+      var totalResults = 10000;
+      var rowHeight = 30;
+      var phonebookEl = document.getElementById('Phonebook');
+      phonebookEl.style.height = totalResults * rowHeight + "px";
+
+      var yPosition = Bacon.fromEvent(window, 'scroll').map(function(){ return window.scrollY });
+      var screenHeight = Bacon.fromEvent(window, 'resize').debounce(50).map(function(){ return window.innerHeight });;      
+
+      var firstVisibleRow = yPosition.map(function(y){ return Math.floor( y / rowHeight ) }).skipDuplicates();
+      firstVisibleRow = firstVisibleRow.toProperty(0); // Seed the initial value
+
+      screenHeight = screenHeight.toProperty(window.innerHeight); // Seed the initial value
+      var rowCount = screenHeight.map(function(screenHeight){
+        return Math.ceil( screenHeight / rowHeight )
+      }).skipDuplicates();
+
+      function calcVisibleRows (firstRow, rowCount) {
+        var visibleIndices = [];
+
+        // Limit the number of visible rows
+        lastRow = firstRow + rowCount + 1;
+        if (lastRow > totalResults) {
+          firstRow -= lastRow - totalResults;
+        }
+
+        for (var i = 0; i <= rowCount; i++) { visibleIndices.push(i + firstRow) }
+        return visibleIndices;
+      }
+
+      var visibleRowIndices = Bacon.combineWith(calcVisibleRows, firstVisibleRow, rowCount);
+
+      var rowIndicesRemoved = visibleRowIndices.diff([], _.difference);
+      var rowIndicesAdded = visibleRowIndices.diff([], function(prev, cur){ return _.difference(cur, prev) }); // longer form here so we can reverse `cur` and `prev`
+
+      var rows = {}; // cache row dom elements for quick and lookup-free cleanup
+
+      rowIndicesAdded.onValue( function(indices){ _.map(indices, renderRow) } );
+
+      function renderRow(idx) {
+        var row = document.createElement('li');
+        row.innerText = idx;
+        row.style.top = idx * rowHeight + 'px';
+        phonebookEl.appendChild(row);
+        rows[idx] = row;
+      }
+
+      rowIndicesRemoved.onValue(function(indices){ _.map(indices, removeRow) });
+
+      function removeRow(idx) {
+        if (idx === null) { return }
+        rows[idx].parentElement.removeChild(rows[idx]);
+        rows[idx] = undefined;
+      }
+
+    })();
+    </script>
+  </ul>
+</body>
+</html>
